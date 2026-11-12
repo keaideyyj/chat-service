@@ -1,17 +1,57 @@
+import logging
 from contextlib import asynccontextmanager
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, Request
+from fastapi.responses import JSONResponse
 
 from .config import Settings, get_settings
-from .llm import LLMError, chat
+from .errors import AppError, new_ref, redact
+from .llm import chat
+from .logs import setup_logging
 from .schemas import ChatRequest, ChatResponse, Message
+
+setup_logging()
+logger = logging.getLogger("chat-service")
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     get_settings()  # 启动即强制校验，配置有问题立刻崩，不要等到第一次请求
     yield
 
+
 app = FastAPI(title="chat-service", lifespan=lifespan)
+
+
+@app.exception_handler(AppError)
+async def handle_app_error(request: Request, exc: AppError) -> JSONResponse:
+    logger.error(
+        "app_error ref=%s path=%s status=%s detail=%s",
+        exc.ref, request.url.path, exc.status_code, exc.detail,
+        extra={"ref": exc.ref, "path": request.url.path, "status": exc.status_code},
+        exc_info=exc,
+    )
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"detail": exc.user_message, "ref": exc.ref},
+        headers={"X-Ref": exc.ref},
+    )
+
+
+@app.exception_handler(Exception)
+async def handle_unexpected(request: Request, exc: Exception) -> JSONResponse:
+    ref = new_ref()
+    logger.error(
+        "unexpected_error ref=%s path=%s detail=%s",
+        ref, request.url.path, redact(str(exc)),
+        extra={"ref": ref, "path": request.url.path, "status": 500},
+        exc_info=exc,
+    )
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "服务内部错误", "ref": ref},
+        headers={"X-Ref": ref},
+    )
 
 
 @app.get("/healthz")
@@ -39,8 +79,4 @@ def post_chat(req: ChatRequest) -> ChatResponse:
         messages.append(Message(role="system", content=req.system_prompt))
     messages.extend(req.history)
     messages.append(Message(role="user", content=req.message))
-
-    try:
-        return chat(messages)
-    except LLMError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return chat(messages)

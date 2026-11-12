@@ -4,12 +4,11 @@ from functools import lru_cache
 from openai import OpenAI
 
 from .config import get_settings
+from .errors import UpstreamError
 from .schemas import ChatResponse, Message, Usage
+import logging
 
-
-class LLMError(Exception):
-    """模型调用失败时对外抛出的统一错误类型。"""
-
+logger = logging.getLogger("chat-service")
 
 @lru_cache
 def _get_client() -> OpenAI:
@@ -40,13 +39,23 @@ def chat(messages: list[Message]) -> ChatResponse:
             messages=[m.model_dump() for m in messages],
         )
     except Exception as exc:
-        raise LLMError(f"模型调用失败: {type(exc).__name__}: {exc}") from exc
+        raise UpstreamError(
+            detail=f"{type(exc).__name__}: {exc}",
+            cause=exc,
+        ) from exc
 
     latency_ms = int((time.perf_counter() - started) * 1000)
     content = resp.choices[0].message.content or ""
     usage = getattr(resp, "usage", None)
     prompt_tokens = getattr(usage, "prompt_tokens", 0) if usage else 0
     completion_tokens = getattr(usage, "completion_tokens", 0) if usage else 0
+    total_tokens = prompt_tokens + completion_tokens
+    cost_yuan = round(estimate_cost(prompt_tokens, completion_tokens), 6)
+    logger.info(
+        "chat_ok model=%s prompt=%d completion=%d total=%d cost=%.6f latency_ms=%d",
+        resp.model, prompt_tokens, completion_tokens, total_tokens, cost_yuan, latency_ms,
+        extra={"model": resp.model, "latency_ms": latency_ms, "cost_yuan": cost_yuan},
+    )
 
     return ChatResponse(
         content=content,
@@ -54,8 +63,8 @@ def chat(messages: list[Message]) -> ChatResponse:
         usage=Usage(
             prompt_tokens=prompt_tokens,
             completion_tokens=completion_tokens,
-            total_tokens=prompt_tokens + completion_tokens,
+            total_tokens=total_tokens,
         ),
-        cost_yuan=round(estimate_cost(prompt_tokens, completion_tokens), 6),
+        cost_yuan=cost_yuan,
         latency_ms=latency_ms,
     )
