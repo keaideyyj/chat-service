@@ -1,12 +1,13 @@
+import json
 import logging
 from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 
 from .config import Settings, get_settings
 from .errors import AppError, new_ref, redact
-from .llm import chat
+from .llm import chat, stream_chat
 from .logs import setup_logging
 from .schemas import ChatRequest, ChatResponse, Message
 
@@ -72,11 +73,53 @@ def show_config(settings: Settings = Depends(get_settings)) -> dict[str, object]
     }
 
 
-@app.post("/chat", response_model=ChatResponse)
-def post_chat(req: ChatRequest) -> ChatResponse:
+def _build_messages(req: ChatRequest) -> list[Message]:
     messages: list[Message] = []
     if req.system_prompt:
         messages.append(Message(role="system", content=req.system_prompt))
     messages.extend(req.history)
     messages.append(Message(role="user", content=req.message))
-    return chat(messages)
+    return messages
+
+
+def _sse(payload: dict) -> str:
+    return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+
+@app.post("/chat", response_model=ChatResponse)
+def post_chat(req: ChatRequest) -> ChatResponse:
+    return chat(_build_messages(req))
+
+@app.post("/chat/stream")
+async def post_chat_stream(req: ChatRequest):
+    messages = _build_messages(req)
+
+    async def event_stream():
+        yield _sse({"type": "start"})
+        try:
+            async for item in stream_chat(messages):
+                yield _sse(item)
+        except AppError as exc:
+            logger.error(
+                "stream_app_error ref=%s detail=%s",
+                exc.ref, exc.detail,
+                extra={"ref": exc.ref, "path": "/chat/stream", "status": exc.status_code},
+                exc_info=exc,
+            )
+            yield _sse({"type": "error", "message": exc.user_message, "ref": exc.ref})
+        except Exception as exc:
+            ref = new_ref()
+            logger.error(
+                "stream_unexpected ref=%s detail=%s",
+                ref, redact(str(exc)),
+                extra={"ref": ref, "path": "/chat/stream", "status": 500},
+                exc_info=exc,
+            )
+            yield _sse({"type": "error", "message": "服务内部错误", "ref": ref})
+
+        yield "data: [DONE], \n\n"
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )

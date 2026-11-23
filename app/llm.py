@@ -1,19 +1,29 @@
 import time
+import logging
 from functools import lru_cache
 
-from openai import OpenAI
+from openai import AsyncOpenAI, OpenAI
 
 from .config import get_settings
 from .errors import UpstreamError
 from .schemas import ChatResponse, Message, Usage
-import logging
 
-logger = logging.getLogger("chat-service")
+logger = logging.getLogger("chat-service.llm")
 
 @lru_cache
 def _get_client() -> OpenAI:
     s = get_settings()
     return OpenAI(
+        api_key=s.deepseek_api_key,
+        base_url=s.deepseek_base_url,
+        timeout=s.request_timeout,
+        max_retries=s.max_retries,
+    )
+
+@lru_cache
+def _get_async_client() -> AsyncOpenAI:
+    s = get_settings()
+    return AsyncOpenAI(
         api_key=s.deepseek_api_key,
         base_url=s.deepseek_base_url,
         timeout=s.request_timeout,
@@ -67,4 +77,57 @@ def chat(messages: list[Message]) -> ChatResponse:
         ),
         cost_yuan=cost_yuan,
         latency_ms=latency_ms,
+    )    
+
+async def stream_chat(messages: list[Message]):
+    """逐块产出 dict：{"type": "delta"} 若干次，最后一次 {"type": "done"}。"""
+    s = get_settings()
+    started = time.perf_counter()
+    prompt_tokens = 0
+    completion_tokens = 0
+
+    try:
+        stream = await _get_async_client().chat.completions.create(
+            model=s.model_name,
+            messages=[m.model_dump() for m in messages],
+            stream=True,
+            stream_options={"include_usage": True},
+        )
+        async for chunk in stream:
+            usage = getattr(chunk, "usage", None)
+            if usage is not None:
+                prompt_tokens = usage.prompt_tokens
+                completion_tokens = usage.completion_tokens
+
+            if not chunk.choices:
+                continue
+    
+            delta = chunk.choices[0].delta.content
+            if delta:
+                yield {"type": "delta", "text": delta}
+
+    except Exception as exc:
+        raise UpstreamError(
+            detail=f"{type(exc).__name__}: {exc}",
+            cause=exc,
+        ) from exc
+
+    latency_ms = int((time.perf_counter() - started) * 1000)
+    cost_yuan = round(estimate_cost(prompt_tokens, completion_tokens), 6)
+    logger.info(
+        "stream_ok model=%s prompt=%d completion=%d cost=%.6f latency_ms=%d",
+        s.model_name, prompt_tokens, completion_tokens, cost_yuan, latency_ms,
+        extra={"model": s.model_name, "latency_ms": latency_ms, "cost_yuan": cost_yuan},
     )
+    yield {
+        "type": "done",
+        "model": s.model_name,
+        "usage": {
+            "prompt_tokens": prompt_tokens,
+            "completion_tokens": completion_tokens,
+            "total_tokens": prompt_tokens + completion_tokens,
+        },
+        "cost_yuan": cost_yuan,
+        "latency_ms": latency_ms,
+    }
+
