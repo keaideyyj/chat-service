@@ -8,7 +8,7 @@ from pathlib import Path
 class JsonFormatter(logging.Formatter):
     """把日志打成一行 JSON，方便将来被 ELK / Loki 直接按字段查询。"""
 
-    EXTRA_FIELDS = ("ref", "path", "status", "model", "latency_ms", "cost_yuan")
+    EXTRA_FIELDS = ("ref", "path", "status", "model", "latency_ms", "cost_yuan", "tool_count")
 
     def format(self, record: logging.LogRecord) -> str:
         payload = {

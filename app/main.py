@@ -7,9 +7,17 @@ from fastapi.responses import JSONResponse, StreamingResponse
 
 from .config import Settings, get_settings
 from .errors import AppError, new_ref, redact
-from .llm import chat, stream_chat
+from .llm import chat, stream_chat, chat_round
 from .logs import setup_logging
-from .schemas import ChatRequest, ChatResponse, Message
+from .schemas import (
+    ChatRequest,
+    ChatResponse,
+    ChatToolsResponse,
+    Message,
+    ToolCallRecord,
+    Usage,
+)
+from .tools import run_tool, tool_specs
 
 setup_logging()
 logger = logging.getLogger("chat-service")
@@ -116,10 +124,61 @@ async def post_chat_stream(req: ChatRequest):
             )
             yield _sse({"type": "error", "message": "服务内部错误", "ref": ref})
 
-        yield "data: [DONE], \n\n"
+        yield "data: [DONE]\n\n"
 
     return StreamingResponse(
         event_stream(),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+@app.post("/chat/tools", response_model=ChatToolsResponse)
+def post_chat_tools(req: ChatRequest) -> ChatToolsResponse:
+    messages: list[dict] = [m.model_dump() for m in _build_messages(req)]
+    rounds: list[dict] = []
+
+    first = chat_round(messages, tools=tool_specs())
+    rounds.append(first)
+    records: list[ToolCallRecord] = []
+
+    if first["tool_calls"]:
+        messages.append(
+            {
+                "role": "assistant",
+                "content": first["content"],
+                "tool_calls": first["tool_calls"],
+            }
+        )
+
+        for call in first["tool_calls"]:
+            fn = call["function"]
+            try:
+                args = json.loads(fn["arguments"] or "{}")
+            except json.JSONDecodeError:
+                args = {}
+
+            result = run_tool(fn["name"], args)
+            messages.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": call["id"],
+                    "content": result,
+                }
+            )
+            records.append(ToolCallRecord(name=fn["name"], arguments=args, result=result))
+
+        rounds.append(chat_round(messages, tools=None))
+
+    final = rounds[-1]
+    return ChatToolsResponse(
+        content=final["content"],
+        tool_calls=records,
+        model=final["model"],
+        usage=Usage(
+            prompt_tokens=sum(r["prompt_tokens"] for r in rounds),
+            completion_tokens=sum(r["completion_tokens"] for r in rounds),
+            total_tokens=sum(r["prompt_tokens"] + r["completion_tokens"] for r in rounds),
+        ),
+        cost_yuan=round(sum(r["cost_yuan"] for r in rounds), 6),
+        latency_ms=sum(r["latency_ms"] for r in rounds),
+    )    

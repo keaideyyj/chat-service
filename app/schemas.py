@@ -26,3 +26,17 @@ class ChatResponse(BaseModel):
     usage: Usage
     cost_yuan: float
     latency_ms: int
+
+class ToolCallRecord(BaseModel):
+    name: str
+    arguments: dict
+    result: str
+
+
+class ChatToolsResponse(BaseModel):
+    content: str
+    tool_calls: list[ToolCallRecord]
+    model: str
+    usage: Usage
+    cost_yuan: float
+    latency_ms: int
