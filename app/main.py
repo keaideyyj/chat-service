@@ -1,6 +1,7 @@
 import json
 import logging
 from contextlib import asynccontextmanager
+from .agent import run_agent
 
 from fastapi import Depends, FastAPI, Request
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -10,6 +11,7 @@ from .errors import AppError, new_ref, redact
 from .llm import chat, stream_chat, chat_round
 from .logs import setup_logging
 from .schemas import (
+    AgentResponse,
     ChatRequest,
     ChatResponse,
     ChatToolsResponse,
@@ -181,4 +183,24 @@ def post_chat_tools(req: ChatRequest) -> ChatToolsResponse:
         ),
         cost_yuan=round(sum(r["cost_yuan"] for r in rounds), 6),
         latency_ms=sum(r["latency_ms"] for r in rounds),
-    )    
+    )
+
+@app.post("/agent", response_model=AgentResponse)
+def post_agent(req: ChatRequest) -> AgentResponse:
+    messages = [m.model_dump() for m in _build_messages(req)]
+    result = run_agent(messages)
+
+    return AgentResponse(
+        content=result["content"],
+        steps=result["steps"],
+        stop_reason=result["stop_reason"],
+        model=result["model"],
+        rounds=result["rounds"],
+        usage=Usage(
+            prompt_tokens=result["prompt_tokens"],
+            completion_tokens=result["completion_tokens"],
+            total_tokens=result["prompt_tokens"] + result["completion_tokens"],
+        ),
+        cost_yuan=result["cost_yuan"],
+        latency_ms=result["latency_ms"],
+    )        

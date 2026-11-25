@@ -40,3 +40,24 @@ class ChatToolsResponse(BaseModel):
     usage: Usage
     cost_yuan: float
     latency_ms: int
+
+class AgentStep(BaseModel):
+    step: int
+    type: Literal["tool", "answer"]
+    content: str = ""
+    tool: str | None = None
+    arguments: dict | None = None
+    result: str | None = None
+    llm_ms: int | None = None
+    tool_ms: int | None = None
+
+
+class AgentResponse(BaseModel):
+    content: str
+    steps: list[AgentStep]
+    stop_reason: str
+    model: str
+    rounds: int
+    usage: Usage
+    cost_yuan: float
+    latency_ms: int    

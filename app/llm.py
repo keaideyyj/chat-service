@@ -65,7 +65,7 @@ def chat(messages: list[Message]) -> ChatResponse:
         "chat_ok model=%s prompt=%d completion=%d total=%d cost=%.6f latency_ms=%d",
         resp.model, prompt_tokens, completion_tokens, total_tokens, cost_yuan, latency_ms,
         extra={"model": resp.model, "latency_ms": latency_ms,
-               "cost_yuan": cost_yuan, "tool_count": len(tool_calls)},
+               "cost_yuan": cost_yuan},
     )
 
     return ChatResponse(
@@ -158,7 +158,7 @@ def chat_round(messages: list[dict], tools: list[dict] | None = None) -> dict:
         "cost=%.6f latency_ms=%d",
         resp.model, prompt_tokens, completion_tokens, len(tool_calls),
         cost_yuan, latency_ms,
-        extra={"model": resp.model, "latency_ms": latency_ms, "cost_yuan": cost_yuan},
+        extra={"model": resp.model, "latency_ms": latency_ms, "cost_yuan": cost_yuan, "tool_count": len(tool_calls)},
     )
 
     return {
