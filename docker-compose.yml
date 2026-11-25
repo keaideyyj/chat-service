@@ -1,0 +1,14 @@
+# 一条命令起服务：docker compose up --build
+services:
+  api:
+    build: .
+    image: chat-service:latest
+    ports:
+      - "8000:8000"
+    # 密钥从本地 .env 注入，不打进镜像
+    env_file:
+      - .env
+    # 日志挂到宿主机，容器删了日志还在
+    volumes:
+      - ./logs:/app/logs
+    restart: unless-stopped

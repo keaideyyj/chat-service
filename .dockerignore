@@ -1,0 +1,24 @@
+# 构建镜像时要排除的东西。
+# 作用：减小镜像体积、加快构建、并且防止密钥被打进镜像层。
+
+.venv/
+.git/
+.gitignore
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+
+# 测试代码不进运行时镜像
+tests/
+smoke.ps1
+run.ps1
+
+# 本地日志
+logs/
+
+# 真实密钥绝对不能进镜像（运行时用 --env-file 注入）
+.env
+
+# 文档类
+*.md

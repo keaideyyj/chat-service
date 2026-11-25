@@ -1,0 +1,8 @@
+# 运行时依赖：镜像里只装这些
+# 版本全部钉死 —— 否则明天构建和今天构建可能装出不同的包，问题难复现
+fastapi==0.147.0
+uvicorn[standard]==0.54.0
+pydantic==2.14.1
+pydantic-settings==2.16.0
+openai==3.35.1
+python-dotenv==1.2.4

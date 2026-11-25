@@ -12,10 +12,10 @@ def client():
         yield c
 
 
-def _fake_response() -> ChatResponse:
+def _fake_response(model: str = "mock-model-xyz") -> ChatResponse:
     return ChatResponse(
         content="pong",
-        model="deepseek-flash",
+        model=model,
         usage=Usage(prompt_tokens=10, completion_tokens=5, total_tokens=15),
         cost_yuan=0.00006,
         latency_ms=120,
@@ -29,13 +29,14 @@ def test_healthz(client):
 
 
 def test_chat_ok(client, monkeypatch):
-    monkeypatch.setattr(main, "chat", lambda messages: _fake_response())
+    monkeypatch.setattr(main, "chat", lambda messages: _fake_response(model="mock-model-xyz"))
 
     r = client.post("/chat", json={"message": "ping"})
     assert r.status_code == 200
     body = r.json()
     assert body["content"] == "pong"
     assert body["usage"]["total_tokens"] == 15
+    assert body["model"] == "mock-model-xyz"
 
 
 def test_chat_rejects_empty_message(client):
