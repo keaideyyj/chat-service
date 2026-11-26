@@ -1,14 +1,14 @@
 import json
 import logging
 from contextlib import asynccontextmanager
-from .agent import run_agent
 
 from fastapi import Depends, FastAPI, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
+from .agent import run_agent
 from .config import Settings, get_settings
 from .errors import AppError, new_ref, redact
-from .llm import chat, stream_chat, chat_round
+from .llm import chat, chat_round, stream_chat
 from .logs import setup_logging
 from .schemas import (
     AgentResponse,

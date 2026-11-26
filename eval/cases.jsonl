@@ -1,0 +1,15 @@
+{"id":"c01","input":"现在几点了？","expect_tools":["get_current_time"],"expect_contains":[],"note":"单工具，时间无需判内容"}
+{"id":"c02","input":"帮我算一下 (12+8)*3","expect_tools":["calculate"],"expect_contains":["60"],"note":"单工具+精确数值"}
+{"id":"c03","input":"工作满三年有几天年假？","expect_tools":["search_kb"],"expect_contains":["10"],"note":"知识库命中"}
+{"id":"c04","input":"报销必须多长时间内提交？","expect_tools":["search_kb"],"expect_contains":["30"],"note":"知识库命中"}
+{"id":"c05","input":"工作满三年的员工一年有几天年假？如果按每天 8 小时算，一年最多休多少小时？","expect_tools":["search_kb","calculate"],"expect_contains":["80"],"max_tool_calls":3,"max_cost":0.011,"note":"明确司龄；检索弱会偶发重试一次，3 次工具/0.011 元为分布上限"}
+{"id":"c06","input":"你好，请用一句话介绍你自己","forbid_tools":["search_kb","calculate","get_current_time"],"expect_contains":[],"note":"不该调工具"}
+{"id":"c07","input":"谢谢，不用查了，就说句好的","forbid_tools":["search_kb"],"expect_contains":[],"note":"指令遵循：明确拒绝检索"}
+{"id":"c08","input":"入职当天要带什么材料？","expect_tools":["search_kb"],"expect_contains":["身份证"],"note":"知识库命中"}
+{"id":"c09","input":"公司股票代码是多少？","expect_tools":["search_kb"],"expect_contains_any":["没有","未","查不到","不确定"],"forbid_patterns":["\\b\\d{6}\\b","[A-Z]{2,5}\\.(SH|SZ|HK)"],"note":"必须承认查不到，且不得编任何股票代码"}
+{"id":"c10","input":"帮我算 2 的 10 次方","expect_tools":["calculate"],"expect_contains":["1024"],"note":"单工具+精确数值"}
+{"id":"c11","input":"我能休 0.5 天年假吗？","expect_tools":["search_kb"],"expect_contains_any":["没有","未","不确","无法"],"forbid_patterns":["可以休半天","可以按半天","允许按半天","当然可以休","不支持半天"],"max_tool_calls":4,"note":"制度未覆盖；判死线是不得断言可否，措辞不判"}
+{"id":"c12","input":"帮我算一下 3 除以 0","expect_tools":["calculate"],"expect_contains_any":["不能","无意义","未定义","不允许"],"forbid_patterns":["ZeroDivisionError","Traceback"],"note":"不得把工具异常原样吐给用户"}
+{"id":"c13","input":"年假规定和报销规定，哪个对公司更有利？","expect_tools":["search_kb"],"expect_contains":["年假","报销"],"max_tool_calls":2,"max_cost":0.008,"note":"D9 优化目标（非质量红线）：当前实测 0.012/7.3s，目标压到 0.008/5s 以内"}
+{"id":"c14","input":"现在是几点？如果我现在提交报销，最晚什么时候必须交？","expect_tools":["get_current_time","search_kb"],"expect_contains":[],"judge":"manual","note":"需要日期推算，而 calculate 只能算纯算术——预期会挂"}
+{"id":"c15","input":"只回答一个字：好","expect_contains":["好"],"forbid_tools":["search_kb","calculate","get_current_time"],"note":"指令遵循：不许啰嗦"}

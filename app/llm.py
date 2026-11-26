@@ -1,5 +1,5 @@
-import time
 import logging
+import time
 from functools import lru_cache
 
 from openai import AsyncOpenAI, OpenAI

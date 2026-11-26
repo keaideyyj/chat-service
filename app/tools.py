@@ -1,6 +1,7 @@
 import ast
 import operator
-from datetime import datetime, timedelta, timezone as dt_timezone
+from datetime import datetime, timedelta
+from datetime import timezone as dt_timezone
 from typing import Any
 
 # ── 工具实现 ────────────────────────────────────────────────
@@ -130,7 +131,9 @@ def run_tool(name: str, arguments: dict) -> str:
     item = TOOLS.get(name)
     if item is None:
         return f"错误：没有名为 {name} 的工具。"
+    # 宽捕获是设计而非疏忽：工具由模型（外部输入）触发，
+    # 任何异常都必须转成文本回灌给模型，否则一个参数错误就能让整个请求 500。
     try:
         return item["func"](**arguments)
-    except Exception as exc:
-        return f"错误：{type(exc).__name__}: {exc}"    
+    except Exception as exc:  # noqa: BLE001
+        return f"工具执行失败（内部错误：{type(exc).__name__}）。请用自然语言向用户说明情况，不要复述这段技术细节。"

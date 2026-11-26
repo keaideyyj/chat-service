@@ -2,7 +2,6 @@ import pytest
 
 from app import tools
 
-
 # ── calculate：正常路径 ────────────────────────────────────
 
 @pytest.mark.parametrize(
@@ -34,12 +33,17 @@ def test_calculate_ok(expression, expected):
         "1 if 1 else 2",
         "lambda: 1",
         "2 ** 999999",
-        "9 / 0",
     ],
 )
 def test_calculate_rejects_unsafe(expression):
-    with pytest.raises(Exception):
+    with pytest.raises(ValueError):
         tools.calculate(expression)
+
+
+def test_calculate_zero_division():
+    """除以零不是安全问题而是算术问题，异常类型不同，测试必须分开写。"""
+    with pytest.raises(ZeroDivisionError):
+        tools.calculate("9 / 0")
 
 
 def test_calculate_rejects_statement():
@@ -68,8 +72,12 @@ def test_run_tool_unknown_name_returns_text():
 
 
 def test_run_tool_wraps_exception_as_text():
+    """工具异常必须变成一段人话，而不是抛出；且不能把技术细节原样漏给用户。"""
     result = tools.run_tool("calculate", {"expression": "1 +"})
-    assert result.startswith("错误：")
+
+    assert isinstance(result, str)
+    assert "失败" in result
+    assert "Traceback" not in result
 
 
 # ── 注册表一致性 ──────────────────────────────────────────
