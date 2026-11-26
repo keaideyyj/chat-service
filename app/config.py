@@ -15,6 +15,9 @@ class Settings(BaseSettings):
     model_name: str = "deepseek-chat"
     request_timeout: float = 30.0
     max_retries: int = 2
+    temperature: float = 0.0
+    max_output_tokens: int = 0
+    prompt_variant: str = "on"
     input_price_per_1m: float = 0.0
     output_price_per_1m: float = 0.0
 

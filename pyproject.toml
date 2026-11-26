@@ -3,8 +3,7 @@ line-length = 100
 target-version = "py311"
 
 [tool.ruff.lint]
-# 只启用"确定是对的"那一批规则。规则开太多，你会开始给每一行加 noqa，
-# 最后没人再看 lint 输出 —— 那是反效果。
+# 只启用"确定是对的"那一批规则。规则开太多，可能导致后续给每一行加 noqa，
 select = ["E4", "E7", "E9", "F", "I", "B", "BLE"]
 
 [tool.ruff.lint.isort]
@@ -13,8 +12,7 @@ known-first-party = ["app"]
 [tool.ruff.lint.flake8-bugbear]
 # B008「不要在默认参数里调用函数」在 FastAPI 里是误报：
 # 依赖注入的标准写法就是 `settings: Settings = Depends(get_settings)`。
-# 这里不是忽略规则，而是告诉 ruff「这几个调用在默认参数里是安全的」——
-# 比给每一行加 # noqa 干净得多。
+# 此处并非忽略规则，而是告诉 ruff「这几个调用在默认参数里是安全的」——
 extend-immutable-calls = [
     "fastapi.Depends",
     "fastapi.Query",

@@ -108,7 +108,7 @@ TOOLS: dict[str, dict[str, Any]] = {
             "type": "function",
             "function": {
                 "name": "search_kb",
-                "description": "在内部知识库检索公司制度（入职、年假、报销等）。涉及公司规定时必须调用，不要凭常识回答。",
+                "description": "在内部知识库检索公司制度（入职、年假、报销等）。涉及公司规定时必须调用，不要凭常识回答。每次对话最多调用一次；如果返回结果为空，直接告知用户未查到，不要更换关键词重复调用。",
                 "parameters": {
                     "type": "object",
                     "properties": {

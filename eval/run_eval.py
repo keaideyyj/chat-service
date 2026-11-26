@@ -14,10 +14,37 @@ from datetime import datetime
 from pathlib import Path
 
 from app.agent import run_agent
+from app.main import _build_messages
+from app.prompts import PROMPT_VERSION, get_variant
+from app.schemas import ChatRequest
+from app.config import get_settings
 
 HERE = Path(__file__).resolve().parent
 CASES_FILE = HERE / "cases.jsonl"
 
+def assert_treatment(cases: list[dict]) -> None:
+    """处理完整性检查：确认"当前变体"与"实际注入"一致。
+
+    on  → 必须恰好 1 条非空 system 消息
+    off → 必须没有 system 消息
+    """
+    first = cases[0]
+    messages = _build_messages(ChatRequest(message=first["input"]))
+    variant = get_variant()
+    system_msgs = [m for m in messages if m.role == "system"]
+
+    print(f"[treatment] variant={variant} prompt_version={PROMPT_VERSION}")
+    print(f"[treatment] roles={[m.role for m in messages]}")
+    print(
+        f"[treatment] system 消息数={len(system_msgs)} "
+        f"长度={len(system_msgs[0].content) if system_msgs else 0}"
+    )
+
+    if variant == "on":
+        assert len(system_msgs) == 1, f"变体 on，但 system 消息数={len(system_msgs)}，处理未生效"
+        assert len(system_msgs[0].content) > 100, "变体 on，但系统提示过短，模板可能没注入"
+    else:
+        assert not system_msgs, f"变体 {variant}，但仍有 {len(system_msgs)} 条 system 消息，处理未生效"
 
 def load_cases() -> list[dict]:
     cases = []
@@ -57,7 +84,7 @@ def check(case: dict, result: dict) -> tuple[bool, str]:
         needles = case["expect_contains_any"]
         if not any(n in result["content"] for n in needles):
             return False, f"回答里没有出现任意一种期望表述：{needles}"
-            
+
     if "max_tool_calls" in case and len(tools_called) > case["max_tool_calls"]:
         return False, f"工具调用 {len(tools_called)} 次，超过上限 {case['max_tool_calls']}"
 
@@ -66,25 +93,11 @@ def check(case: dict, result: dict) -> tuple[bool, str]:
 
     return True, "ok"
 
-
-def main() -> None:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--limit", type=int, default=0)
-    parser.add_argument("--case", default="")
-    args = parser.parse_args()
-
-    cases = load_cases()
-    if args.case:
-        cases = [c for c in cases if c["id"] == args.case]
-    if args.limit:
-        cases = cases[: args.limit]
-    if not cases:
-        print("没有匹配的用例，检查 --case / --limit 参数")
-        return
+def run_round(cases: list[dict]) -> list[dict]:
     rows = []
     for case in cases:
         started = time.perf_counter()
-        result = run_agent([{"role": "user", "content": case["input"]}])
+        result = run_agent([m.model_dump() for m in _build_messages(ChatRequest(message=case["input"]))])
         wall_ms = int((time.perf_counter() - started) * 1000)
 
         manual = case.get("judge") == "manual"
@@ -100,6 +113,7 @@ def main() -> None:
                 trace.append(f"`{s.tool}({args_text})` → {result_text}")
             else:
                 trace.append(f"最终回答（{len(s.content or '')} 字）")
+
         rows.append(
             {
                 "id": case["id"],
@@ -113,6 +127,7 @@ def main() -> None:
                 "latency": wall_ms,
                 "stop": result["stop_reason"],
                 "content": result["content"],
+                "content_len": len(result["content"] or ""),
                 "trace": trace,
             }
         )
@@ -120,35 +135,72 @@ def main() -> None:
         flag = "MANUAL" if manual else ("PASS" if passed else "FAIL")
         print(
             f"[{flag}] {case['id']} {case['input'][:24]} "
-            f"stop={result['stop_reason']} cost={result['cost_yuan']:.6f}"
+            f"stop={result['stop_reason']} cost={result['cost_yuan']:.6f} "
+            f"字={len(result['content'] or '')} tools={len(trace) - 1 if trace else 0}"
         )
-        if manual or not passed:
-            if not manual:
-                print(f"        理由：{reason}")
-            print("        回答：")
-            for line in (result["content"] or "").splitlines() or [""]:
-                print(f"          {line}")    
+        if not manual and not passed:
+            print(f"        理由：{reason}")
 
-    auto_rows = [r for r in rows if not r["manual"]]
-    passed_n = sum(1 for r in auto_rows if r["passed"])
-    total_cost = sum(r["cost"] for r in rows)
-    latencies = sorted(r["latency"] for r in rows)
+    return rows
 
-    print("\n== 汇总 ==")
-    if auto_rows:
-        print(f"自动通过率  {passed_n}/{len(auto_rows)} = {passed_n / len(auto_rows):.0%}")
-    print(f"人工待判    {len(rows) - len(auto_rows)} 条")
-    print(f"总成本      {total_cost:.6f} 元")
-    print(f"平均步数    {statistics.mean(r['steps'] for r in rows):.1f}")
-    print(f"平均延迟    {statistics.mean(latencies)} ms")
-    if len(latencies) >= 2:
-        p95_index = max(0, int(len(latencies) * 0.95) - 1)
-        print(f"P95 延迟    {latencies[p95_index]} ms")
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--limit", type=int, default=0)
+    parser.add_argument("--case", default="")
+    parser.add_argument("--repeat", type=int, default=1, help="整轮重复次数，用于估计波动")
+    args = parser.parse_args()
 
-    stamp = datetime.now().strftime("%Y%m%d-%H%M")
+    cases = load_cases()
+    if args.case:
+        cases = [c for c in cases if c["id"] == args.case]
+    if args.limit:
+        cases = cases[: args.limit]
+    if not cases:
+        print("没有匹配的用例，检查 --case / --limit 参数")
+        return
+    assert_treatment(cases)    
+    rounds: list[list[dict]] = []
+    for rep in range(1, args.repeat + 1):
+        if args.repeat > 1:
+            print(f"\n===== 第 {rep}/{args.repeat} 轮 =====")
+        rounds.append(run_round(cases))
+
+    rows = rounds[-1]  # 报告用最后一轮
+
+    print("\n== 各轮汇总 ==")
+    for index, round_rows in enumerate(rounds, start=1):
+        auto = [r for r in round_rows if not r["manual"]]
+        ok = sum(1 for r in auto if r["passed"])
+        print(
+            f"第 {index} 轮：{ok}/{len(auto)} 通过　"
+            f"成本 {sum(r['cost'] for r in round_rows):.6f} 元　"
+            f"平均字数 {statistics.mean(r['content_len'] for r in round_rows):.0f}　"
+            f"平均延迟 {statistics.mean(r['latency'] for r in round_rows):.0f}ms"
+        )
+
+    if args.repeat > 1:
+        print("\n== 逐条稳定性 ==")
+        per_case: dict[str, list[dict]] = {}
+        for round_rows in rounds:
+            for row in round_rows:
+                per_case.setdefault(row["id"], []).append(row)
+
+        for cid, case_rows in per_case.items():
+            if case_rows[0]["manual"]:
+                print(f"{cid}  人工待判")
+                continue
+            ok = sum(1 for r in case_rows if r["passed"])
+            tag = "稳定" if ok == len(case_rows) else ("全挂" if ok == 0 else "抖动")
+            print(f"{cid}  {ok}/{len(case_rows)}  {tag}")
+
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     report = HERE / f"report-{stamp}.md"
     lines = [
         f"# 评估报告 {stamp}",
+        "",
+        f"- 变体：`{get_variant()}`（prompt {PROMPT_VERSION}）",
+        f"- 温度：`{get_settings().temperature}`　模型：`{get_settings().model_name}`",
+        f"- 用例：{len(rows)} 条　重复：{args.repeat} 轮",
         "",
         "| # | 用例 | 工具 | 步数 | 成本 | 延迟 | 结果 |",
         "|---|---|---|---|---|---|---|",

@@ -135,6 +135,9 @@ async def stream_chat(messages: list[Message]):
 def chat_round(messages: list[dict], tools: list[dict] | None = None) -> dict:
     s = get_settings()
     kwargs: dict = {"model": s.model_name, "messages": messages}
+    kwargs["temperature"] = s.temperature
+    if s.max_output_tokens:
+        kwargs["max_tokens"] = s.max_output_tokens
     if tools:
         kwargs["tools"] = tools
         kwargs["tool_choice"] = "auto"

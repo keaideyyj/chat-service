@@ -10,6 +10,7 @@ from .config import Settings, get_settings
 from .errors import AppError, new_ref, redact
 from .llm import chat, chat_round, stream_chat
 from .logs import setup_logging
+from .prompts import PROMPT_VERSION, get_system_prompt
 from .schemas import (
     AgentResponse,
     ChatRequest,
@@ -80,13 +81,16 @@ def show_config(settings: Settings = Depends(get_settings)) -> dict[str, object]
         "api_key_configured": bool(settings.deepseek_api_key),
         "input_price_per_1m": settings.input_price_per_1m,
         "output_price_per_1m": settings.output_price_per_1m,
+        "prompt_version": PROMPT_VERSION,
     }
 
 
 def _build_messages(req: ChatRequest) -> list[Message]:
     messages: list[Message] = []
-    if req.system_prompt:
-        messages.append(Message(role="system", content=req.system_prompt))
+    # 客户端传了就用它的，没传就用默认（注意：传了会覆盖默认约束，包括安全约束）
+    system_text = req.system_prompt or get_system_prompt()
+    if system_text:
+        messages.append(Message(role="system", content=system_text))
     messages.extend(req.history)
     messages.append(Message(role="user", content=req.message))
     return messages
