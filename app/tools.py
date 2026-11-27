@@ -53,13 +53,20 @@ _KB = [
 ]
 
 
+MIN_SCORE = 0.60  # 正例最低 0.687（年假），负例最高 0.508（股票代码），取中点让两侧容错均衡
+
+
 def search_kb(query: str, top_k: int = 2) -> str:
-    scored = [(sum(1 for ch in set(query) if ch in d["title"] + d["content"]), d) for d in _KB]
-    scored.sort(key=lambda item: item[0], reverse=True)
-    hits = [d for score, d in scored[:top_k] if score > 0]
-    if not hits:
+    from .rag import search
+
+    hits = search(query, top_k=top_k)
+    relevant = [h for h in hits if h["score"] >= MIN_SCORE]
+    if not relevant:
         return "知识库中没有找到相关内容。"
-    return "\n".join(f"[{d['id']}] {d['title']}：{d['content']}" for d in hits)
+    return "\n".join(
+        f"[{h['doc']} / {h['title']}] {h['text']}\n（相关度 {h['score']:.3f}）"
+        for h in relevant
+    )
 
 TOOLS: dict[str, dict[str, Any]] = {
     "get_current_time": {

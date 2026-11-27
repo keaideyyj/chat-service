@@ -4,6 +4,7 @@
     python -m eval.run_eval              全跑 10 条
     python -m eval.run_eval --limit 3    只跑前 3 条（省钱）
     python -m eval.run_eval --case c05   只跑一条
+    实际用例 .\.venv\Scripts\python.exe -m eval.run_eval --repeat 2
 """
 import argparse
 import json
